@@ -1,0 +1,300 @@
+/* K.K. Wagh Polytechnic Chatbot Widget Styles */
+:root {
+  --kkw-primary: #0d3b66;
+  --kkw-primary-hover: #092c4e;
+  --kkw-accent: #f4d35e;
+  --kkw-bg-light: #f8fafc;
+  --kkw-text-dark: #1e293b;
+  --kkw-text-muted: #64748b;
+  --kkw-border: #e2e8f0;
+  --kkw-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --kkw-user-msg-bg: #0d3b66;
+  --kkw-bot-msg-bg: #f1f5f9;
+}
+
+#kkw-chatbot-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 99999;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  box-sizing: border-box;
+}
+
+#kkw-chatbot-container * {
+  box-sizing: border-box;
+}
+
+/* Floating Trigger Button */
+.kkw-chat-trigger {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0d3b66 0%, #1e5288 100%);
+  color: #ffffff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(13, 59, 102, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  position: relative;
+}
+
+.kkw-chat-trigger:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(13, 59, 102, 0.5);
+}
+
+.kkw-chat-trigger svg {
+  width: 28px;
+  height: 28px;
+  fill: currentColor;
+}
+
+.kkw-badge-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  background-color: #10b981;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+}
+
+/* Chat Window Container */
+.kkw-chat-window {
+  width: 380px;
+  height: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 100px);
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: var(--kkw-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--kkw-border);
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  position: absolute;
+  bottom: 74px;
+  right: 0;
+}
+
+.kkw-chat-window.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+/* Header */
+.kkw-chat-header {
+  background: linear-gradient(135deg, #0d3b66 0%, #1e5288 100%);
+  color: #ffffff;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2px solid var(--kkw-accent);
+}
+
+.kkw-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kkw-header-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--kkw-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.kkw-header-info h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.kkw-header-info p {
+  margin: 2px 0 0 0;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.kkw-close-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kkw-close-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* Messages Body */
+.kkw-chat-body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  background-color: var(--kkw-bg-light);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kkw-msg {
+  max-width: 85%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+
+.kkw-msg.user {
+  align-self: flex-end;
+  background-color: var(--kkw-user-msg-bg);
+  color: #ffffff;
+  border-bottom-right-radius: 2px;
+}
+
+.kkw-msg.bot {
+  align-self: flex-start;
+  background-color: var(--kkw-bot-msg-bg);
+  color: var(--kkw-text-dark);
+  border-bottom-left-radius: 2px;
+  border: 1px solid #e2e8f0;
+}
+
+/* Sources Section */
+.kkw-sources-container {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #cbd5e1;
+  font-size: 11.5px;
+  color: var(--kkw-text-muted);
+}
+
+.kkw-sources-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--kkw-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kkw-source-tag {
+  display: inline-block;
+  background-color: #e0f2fe;
+  color: #0369a1;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  margin-top: 4px;
+  margin-right: 4px;
+}
+
+/* Loading Dots */
+.kkw-loading-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+}
+
+.kkw-loading-dot {
+  width: 6px;
+  height: 6px;
+  background-color: var(--kkw-text-muted);
+  border-radius: 50%;
+  animation: kkw-bounce 1.4s infinite ease-in-out both;
+}
+
+.kkw-loading-dot:nth-child(1) { animation-delay: -0.32s; }
+.kkw-loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes kkw-bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1.0); }
+}
+
+/* Input Footer */
+.kkw-chat-footer {
+  padding: 12px;
+  background: #ffffff;
+  border-top: 1px solid var(--kkw-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kkw-chat-input {
+  flex: 1;
+  border: 1px solid var(--kkw-border);
+  border-radius: 20px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.kkw-chat-input:focus {
+  border-color: var(--kkw-primary);
+}
+
+.kkw-send-btn {
+  background-color: var(--kkw-primary);
+  color: #ffffff;
+  border: none;
+  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.kkw-send-btn:hover {
+  background-color: var(--kkw-primary-hover);
+}
+
+.kkw-send-btn:disabled {
+  background-color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+/* Responsive Mobile View */
+@media (max-width: 480px) {
+  #kkw-chatbot-container {
+    bottom: 16px;
+    right: 16px;
+  }
+  .kkw-chat-window {
+    width: calc(100vw - 32px);
+    height: 80vh;
+    bottom: 70px;
+    right: 0;
+  }
+}
