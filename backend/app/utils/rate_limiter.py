@@ -1,6 +1,7 @@
 import time
 import logging
 from collections import defaultdict
+from urllib.parse import urlparse
 from fastapi import HTTPException, Request, status
 from app.config import settings
 
@@ -12,13 +13,18 @@ class RateLimiter:
         self.client_requests = defaultdict(list)
         self.redis_client = None
 
-        if settings.REDIS_URL:
+        redis_url = settings.REDIS_URL.strip().strip('"').strip("'")
+        if redis_url and urlparse(redis_url).scheme in {"redis", "rediss", "unix"}:
             try:
                 import redis
-                self.redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
-                logger.info(f"Connected to Redis for rate limiting at {settings.REDIS_URL}")
+                self.redis_client = redis.from_url(redis_url, decode_responses=True)
+                logger.info("Redis rate limiting configured")
             except Exception as e:
-                logger.warning(f"Could not connect to Redis ({str(e)}), falling back to in-memory rate limiter.")
+                logger.warning("Could not configure Redis (%s); using in-memory rate limiting.", str(e))
+        elif redis_url:
+            logger.warning(
+                "REDIS_URL must use redis://, rediss://, or unix://; using in-memory rate limiting."
+            )
 
     def check_rate_limit(self, request: Request, identifier: str = None):
         client_ip = identifier or (request.client.host if request.client else "unknown")
