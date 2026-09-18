@@ -1,10 +1,16 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class UserRegister(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
+    admin_secret: str = Field(..., description="Secret key required to create an admin account")
 
 class Token(BaseModel):
     access_token: str

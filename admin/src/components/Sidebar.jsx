@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, HelpCircle, Bell, MessageSquareText } from 'lucide-react';
+import { LayoutDashboard, FileText, HelpCircle, Bell, MessageSquareText, ShieldCheck } from 'lucide-react';
 
 const Sidebar = () => {
   const navItems = [
@@ -9,6 +9,7 @@ const Sidebar = () => {
     { path: '/faqs', label: 'Manage FAQs', icon: HelpCircle },
     { path: '/notices', label: 'Manage Notices', icon: Bell },
     { path: '/logs', label: 'Query Logs', icon: MessageSquareText },
+    { path: '/audit-logs', label: 'Audit Logs', icon: ShieldCheck },
   ];
 
   return (
@@ -40,7 +41,7 @@ const Sidebar = () => {
 
       <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/60 text-xs">
         <p className="font-semibold text-slate-200">K.K. Wagh Polytechnic</p>
-        <p className="text-slate-400 text-[11px] mt-0.5">RAG Knowledge Engine v1.0</p>
+        <p className="text-slate-400 text-[11px] mt-0.5">RAG Engine v2.0 Enterprise</p>
       </div>
     </aside>
   );

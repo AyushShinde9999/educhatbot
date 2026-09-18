@@ -9,6 +9,9 @@ class DocumentResponse(BaseModel):
     category: str
     file_size: int
     chunk_count: int
+    status: str = "ready"
+    error_message: Optional[str] = None
+    file_hash: Optional[str] = None
     upload_date: datetime
     uploaded_by: str
 

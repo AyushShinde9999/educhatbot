@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Upload, FileText, Trash2, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
+import { Upload, FileText, Trash2, CheckCircle, AlertCircle, RefreshCw, AlertTriangle, Clock } from 'lucide-react';
 
 const Documents = () => {
   const [documents, setDocuments] = useState([]);
@@ -72,8 +72,8 @@ const Documents = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-bold text-slate-800">Document Management</h2>
-        <p className="text-xs text-slate-500">Upload PDF documents for automatic text extraction, chunking, and ChromaDB vector indexing.</p>
+        <h2 className="text-xl font-bold text-slate-800">Document Ingestion Pipeline</h2>
+        <p className="text-xs text-slate-500">Atomic PDF upload with SHA-256 deduplication, magic bytes validation, and ChromaDB vector indexing.</p>
       </div>
 
       {message && (
@@ -89,7 +89,7 @@ const Documents = () => {
       <form onSubmit={handleUpload} className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
           <Upload className="w-4 h-4 text-sky-600" />
-          Upload Official Document (PDF)
+          Upload Official Document (PDF - Max 15MB)
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -139,7 +139,7 @@ const Documents = () => {
           className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-4 py-2.5 rounded-lg shadow-sm flex items-center gap-2 transition-all disabled:opacity-50"
         >
           {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-          {uploading ? 'Processing PDF & Vectorizing...' : 'Upload & Process Document'}
+          {uploading ? 'Validating & Indexing Vector Chunks...' : 'Upload & Process Document'}
         </button>
       </form>
 
@@ -161,6 +161,7 @@ const Documents = () => {
                 <tr>
                   <th className="p-3">Title & File</th>
                   <th className="p-3">Category</th>
+                  <th className="p-3">Status</th>
                   <th className="p-3">File Size</th>
                   <th className="p-3">Chunks</th>
                   <th className="p-3">Uploaded Date</th>
@@ -183,6 +184,23 @@ const Documents = () => {
                       <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[11px] font-medium border border-slate-200">
                         {doc.category}
                       </span>
+                    </td>
+                    <td className="p-3">
+                      {doc.status === 'ready' && (
+                        <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full text-[11px] font-medium border border-emerald-200">
+                          <CheckCircle className="w-3 h-3" /> Ready
+                        </span>
+                      )}
+                      {doc.status === 'processing' && (
+                        <span className="inline-flex items-center gap-1 text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full text-[11px] font-medium border border-sky-200 animate-pulse">
+                          <Clock className="w-3 h-3" /> Processing
+                        </span>
+                      )}
+                      {doc.status === 'failed' && (
+                        <span className="inline-flex items-center gap-1 text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full text-[11px] font-medium border border-rose-200" title={doc.error_message}>
+                          <AlertTriangle className="w-3 h-3" /> Failed
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-slate-500">{(doc.file_size / 1024).toFixed(1)} KB</td>
                     <td className="p-3 font-semibold text-sky-700">{doc.chunk_count} vectors</td>

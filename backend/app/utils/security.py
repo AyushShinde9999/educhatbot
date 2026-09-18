@@ -1,6 +1,6 @@
 import bcrypt
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Tuple, Dict
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -10,6 +10,9 @@ from app.database import get_db
 from app.models.user import User
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+# Account lockout tracking store: username -> {"attempts": int, "locked_until": datetime}
+_login_attempts: Dict[str, dict] = {}
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     if not plain_password or not hashed_password:
@@ -22,6 +25,54 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def get_password_hash(password: str) -> str:
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def is_account_locked(username: str) -> Tuple[bool, Optional[int]]:
+    """
+    Checks if an account is currently locked out due to excessive failed attempts.
+    Returns (is_locked, remaining_minutes).
+    """
+    record = _login_attempts.get(username)
+    if not record:
+        return False, None
+
+    locked_until = record.get("locked_until")
+    if locked_until:
+        now = datetime.utcnow()
+        if now < locked_until:
+            remaining_secs = int((locked_until - now).total_seconds())
+            remaining_mins = max(1, (remaining_secs + 59) // 60)
+            return True, remaining_mins
+        else:
+            # Lockout expired
+            _login_attempts.pop(username, None)
+            return False, None
+    return False, None
+
+def record_failed_login(username: str) -> int:
+    """
+    Records a failed login attempt. If max attempts reached, sets lockout timer.
+    Returns current attempt count.
+    """
+    now = datetime.utcnow()
+    record = _login_attempts.get(username, {"attempts": 0, "locked_until": None})
+    
+    # If previous lockout expired, reset attempts
+    if record.get("locked_until") and now >= record["locked_until"]:
+        record = {"attempts": 0, "locked_until": None}
+
+    record["attempts"] += 1
+
+    if record["attempts"] >= settings.MAX_LOGIN_ATTEMPTS:
+        record["locked_until"] = now + timedelta(minutes=settings.LOCKOUT_DURATION_MINUTES)
+
+    _login_attempts[username] = record
+    return record["attempts"]
+
+def reset_failed_logins(username: str):
+    """
+    Resets failed login attempts for a username upon successful login.
+    """
+    _login_attempts.pop(username, None)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()

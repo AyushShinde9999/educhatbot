@@ -37,6 +37,24 @@ export const AuthProvider = ({ children }) => {
     return response.data;
   };
 
+  const register = async (username, email, password, adminSecret) => {
+    const response = await api.post('/api/auth/register', {
+      username,
+      email,
+      password,
+      admin_secret: adminSecret
+    });
+    const { access_token, role } = response.data;
+    
+    setToken(access_token);
+    localStorage.setItem('kkw_admin_token', access_token);
+    
+    const userObj = { username, role };
+    setUser(userObj);
+    localStorage.setItem('kkw_admin_user', JSON.stringify(userObj));
+    return response.data;
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -45,7 +63,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ token, user, login, logout, loading, isAuthenticated: !!token }}>
+    <AuthContext.Provider value={{ token, user, login, register, logout, loading, isAuthenticated: !!token }}>
       {children}
     </AuthContext.Provider>
   );

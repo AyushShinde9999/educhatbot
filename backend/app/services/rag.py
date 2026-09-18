@@ -1,12 +1,15 @@
+import json
 import logging
+import re
 import google.generativeai as genai
 from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
+from datetime import datetime
 from app.config import settings
 from app.services.chroma_service import chroma_service
+from app.services.embedding import embedding_service
 from app.models.faq import FAQ
 from app.models.notice import Notice
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +20,31 @@ if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_h
 FALLBACK_MESSAGE = (
     "I apologize, but I do not have verified official information regarding your question "
     "in my database. Please contact the K.K. Wagh Polytechnic administration office directly "
-    "or check the official notice board at https://kkwaghpoly.loukik.com/."
+    "or check the official notice board."
 )
 
-SYSTEM_PROMPT = """You are the official AI Institutional Assistant for K.K. Wagh Polytechnic, Nashik.
-Your goal is to provide helpful, polite, and accurate information to students, parents, faculty, and visitors based STRICTLY on the official context provided below.
+# Thresholds per context source type
+PDF_SIMILARITY_THRESHOLD = 0.40
+FAQ_SIMILARITY_THRESHOLD = 0.50
+NOTICE_SIMILARITY_THRESHOLD = 0.45
 
-CRITICAL INSTRUCTIONS AGAINST HALLUCINATION:
-1. Answer ONLY using the facts explicitly stated in the CONTEXT below.
-2. Do NOT guess, speculate, extrapolate, or bring in outside knowledge about other colleges or general topics.
-3. If the answer cannot be fully found in the provided CONTEXT, state clearly that you do not have verified official information for that specific query.
-4. Keep your answer clear, concise, professional, and well-structured.
-5. Reference official document names and page numbers in your text when explaining rules or procedures.
+SYSTEM_PROMPT = """You are the official AI Institutional Assistant for K.K. Wagh Polytechnic, Nashik.
+Answer the user's question using ONLY the provided official context.
+
+CRITICAL CONSTRAINTS:
+1. Answer strictly using facts explicitly stated in the CONTEXT below.
+2. Do NOT guess, speculate, or bring in outside information.
+3. If the context does NOT contain enough information, set "fallback_status": true and answer with:
+   "I apologize, but I do not have verified official information regarding your question in my database. Please contact the K.K. Wagh Polytechnic administration office directly or check the official notice board."
+4. Respond in valid, strict JSON format with the following keys:
+     {{
+     "answer": "Your grounded response text here.",
+     "citations": [
+             {{"document_name": "Exact Document Name", "page_number": 1}}
+     ],
+     "confidence": 0.95,
+     "fallback_status": false
+     }}
 
 OFFICIAL CONTEXT:
 {context}
@@ -36,95 +52,106 @@ OFFICIAL CONTEXT:
 USER QUESTION:
 {question}
 
-YOUR GROUNDED ANSWER:"""
+YOUR JSON RESPONSE:"""
 
 
 class RAGService:
     def __init__(self):
         self.fallback_message = FALLBACK_MESSAGE
 
-    def get_database_context(self, query: str, db: Session) -> Tuple[List[str], List[Dict[str, Any]]]:
-        """
-        Searches active FAQs and active Notices in SQLite/Postgres.
-        """
-        extra_texts = []
-        sources = []
-        query_lower = query.lower()
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        if not vec1 or not vec2 or len(vec1) != len(vec2):
+            return 0.0
+        dot = sum(a * b for a, b in zip(vec1, vec2))
+        norm1 = sum(a * a for a in vec1) ** 0.5
+        norm2 = sum(b * b for b in vec2) ** 0.5
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        return dot / (norm1 * norm2)
 
-        # Check FAQs
+    def search_faqs_and_notices(self, question: str, db: Session) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """
+        Uses vector embedding semantic similarity to retrieve relevant active FAQs and Notices.
+        """
+        context_parts = []
+        sources = []
+        query_embedding = embedding_service.generate_embedding(question)
+
+        # 1. Search Active FAQs
         faqs = db.query(FAQ).filter(FAQ.is_active == True).all()
         for faq in faqs:
-            # Simple keyword matching for FAQs
-            q_words = [w for w in query_lower.split() if len(w) > 3]
-            faq_q_lower = faq.question.lower()
-            match_count = sum(1 for w in q_words if w in faq_q_lower)
+            faq_text = f"Q: {faq.question} A: {faq.answer}"
+            faq_emb = embedding_service.generate_embedding(faq_text)
+            sim = self._cosine_similarity(query_embedding, faq_emb)
 
-            if match_count >= 1 or query_lower in faq_q_lower or faq_q_lower in query_lower:
-                extra_texts.append(f"FAQ [Category: {faq.category}]: Q: {faq.question} | A: {faq.answer}")
+            if sim >= FAQ_SIMILARITY_THRESHOLD:
+                doc_title = f"FAQ: {faq.question[:35]}..."
+                context_parts.append(
+                    f"Document: {doc_title} [Category: {faq.category}]\nQuestion: {faq.question}\nAnswer: {faq.answer}"
+                )
                 sources.append({
-                    "document_name": f"FAQ: {faq.question[:30]}...",
+                    "document_name": doc_title,
                     "page_number": None,
-                    "score": 0.9,
+                    "score": round(sim, 4),
                     "text_snippet": faq.answer[:150],
                     "category": faq.category
                 })
 
-        # Check active Notices
+        # 2. Search Active Notices (Non-expired)
         now = datetime.utcnow()
         notices = db.query(Notice).filter(Notice.is_active == True).all()
         for notice in notices:
             if notice.expiry_date and notice.expiry_date < now:
-                continue # Expired notice
-            
-            n_title_lower = notice.title.lower()
-            if any(w in n_title_lower for w in query_lower.split() if len(w) > 3):
-                extra_texts.append(f"Notice [{notice.title}]: {notice.content}")
+                continue
+
+            notice_text = f"Title: {notice.title} Content: {notice.content}"
+            notice_emb = embedding_service.generate_embedding(notice_text)
+            sim = self._cosine_similarity(query_embedding, notice_emb)
+
+            if sim >= NOTICE_SIMILARITY_THRESHOLD:
+                doc_title = f"Notice: {notice.title}"
+                context_parts.append(
+                    f"Document: {doc_title} [Category: Notice]\nTitle: {notice.title}\nContent: {notice.content}"
+                )
                 sources.append({
-                    "document_name": f"Notice: {notice.title}",
+                    "document_name": doc_title,
                     "page_number": None,
-                    "score": 0.85,
+                    "score": round(sim, 4),
                     "text_snippet": notice.content[:150],
                     "category": "Notice"
                 })
 
-        return extra_texts, sources
+        return context_parts, sources
 
     def generate_answer(self, question: str, db: Session) -> Dict[str, Any]:
         """
-        Full RAG pipeline:
-        1. Retrieve vector search chunks from ChromaDB.
-        2. Retrieve database FAQs and Notices.
-        3. Evaluate relevance threshold.
-        4. Assemble strict prompt & call Gemini LLM.
-        5. Return grounded answer + sources or fallback.
+        Full Production RAG pipeline with Citation Verification and Structured JSON Enforcement.
         """
-        # 1. Vector Search
-        vector_results = chroma_service.search_similar(question, top_k=4)
+        # 1. Vector Search for PDF Chunks
+        vector_results = chroma_service.search_similar(question, top_k=5)
         
-        # 2. Database FAQs & Notices Search
-        db_texts, db_sources = self.get_database_context(question, db)
+        # 2. Semantic Search for FAQs & Notices
+        db_context, db_sources = self.search_faqs_and_notices(question, db)
 
-        # Build context string & source list
-        context_parts = []
+        context_parts = list(db_context)
         sources = list(db_sources)
-        valid_chunks_count = 0
+        retrieved_doc_names = set(s["document_name"] for s in sources)
 
+        # 3. Apply PDF similarity threshold
         for res in vector_results:
-            # Score filter threshold (accept score >= 0.45 or min distance)
             score = res.get("score", 0.0)
             meta = res.get("metadata", {})
-            doc_name = meta.get("filename") or meta.get("title") or "Official PDF Document"
+            doc_name = meta.get("filename") or meta.get("title") or "Official Document"
             page_num = meta.get("page_number")
-            cat = meta.get("category", "General Document")
+            cat = meta.get("category", "General")
             text = res.get("text", "")
 
-            if score >= 0.35: # Sufficient relevance
-                valid_chunks_count += 1
+            if score >= PDF_SIMILARITY_THRESHOLD:
+                retrieved_doc_names.add(doc_name)
                 context_parts.append(
                     f"Document: {doc_name} (Page {page_num}) [Category: {cat}]\nContent: {text}"
                 )
                 
-                # Avoid duplicate source entries for same doc & page
                 already_added = any(
                     s.get("document_name") == doc_name and s.get("page_number") == page_num 
                     for s in sources
@@ -134,70 +161,117 @@ class RAGService:
                         "document_name": doc_name,
                         "page_number": page_num,
                         "score": score,
-                        "text_snippet": text[:150] + "..." if len(text) > 150 else text,
+                        "text_snippet": text[:150],
                         "category": cat
                     })
 
-        context_parts.extend(db_texts)
-        
-        # 3. Fallback Check: If no relevant information found in database or vector DB
+        # 4. Fallback check if no context met confidence thresholds
         if not context_parts:
             return {
                 "answer": self.fallback_message,
                 "sources": [],
-                "fallback_used": True
+                "fallback_used": True,
+                "confidence": 0.0
             }
 
         full_context = "\n\n---\n\n".join(context_parts)
         prompt = SYSTEM_PROMPT.format(context=full_context, question=question)
 
-        # 4. Call Gemini LLM or Local Mock LLM
-        answer = ""
+        # 5. Call Gemini LLM
+        raw_response = ""
+        parsed_json = None
         fallback_used = False
 
         if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
             try:
-                # Try gemini-1.5-flash first, fallback to gemini-pro
-                try:
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    response = model.generate_content(prompt)
-                    answer = response.text.strip()
-                except Exception as e1:
-                    logger.warning(f"gemini-1.5-flash failed ({str(e1)}), trying gemini-pro...")
-                    model = genai.GenerativeModel("gemini-pro")
-                    response = model.generate_content(prompt)
-                    answer = response.text.strip()
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                res = model.generate_content(prompt)
+                raw_response = res.text.strip()
+                
+                # Extract JSON block
+                json_match = re.search(r'\{.*\}', raw_response, re.DOTALL)
+                if json_match:
+                    parsed_json = json.loads(json_match.group(0))
             except Exception as e:
-                logger.error(f"Gemini API generation error: {str(e)}")
-                # If LLM API fails, format grounded response directly from retrieved context
-                answer = self._extrapolate_from_context(question, context_parts)
-        else:
-            # No API key provided - synthesize grounded response directly from retrieved context chunks
-            answer = self._extrapolate_from_context(question, context_parts)
+                logger.warning(f"Gemini structured JSON generation error ({str(e)}). Using grounded synthesis.")
 
-        # Check if the generated answer itself indicates insufficient info
-        if "i apologize" in answer.lower() and "verified official information" in answer.lower():
-            fallback_used = True
-            sources = []
+        # 6. Post-generation Verification
+        if parsed_json and isinstance(parsed_json, dict):
+            answer_text = str(parsed_json.get("answer", "")).strip()
+            fallback_used = bool(parsed_json.get("fallback_status", False))
+            try:
+                confidence = max(0.0, min(1.0, float(parsed_json.get("confidence", 0.0))))
+            except (TypeError, ValueError):
+                confidence = 0.0
 
+            if fallback_used or "i apologize" in answer_text.lower():
+                return {
+                    "answer": self.fallback_message,
+                    "sources": [],
+                    "fallback_used": True,
+                    "confidence": 0.0
+                }
+
+            # Grounding Citation Verification: Verify citations returned by LLM actually exist in context
+            valid_citations = []
+            llm_citations = parsed_json.get("citations", [])
+            if not answer_text or not isinstance(llm_citations, list):
+                return {
+                    "answer": self.fallback_message,
+                    "sources": [],
+                    "fallback_used": True,
+                    "confidence": 0.0
+                }
+
+            for cite in llm_citations:
+                if not isinstance(cite, dict):
+                    continue
+                cite_name = cite.get("document_name", "")
+                cite_page = cite.get("page_number")
+                if any(
+                    cite_name == doc_name
+                    and (cite_page is None or cite_page == source_page)
+                    for doc_name, source_page in (
+                        (source.get("document_name"), source.get("page_number"))
+                        for source in sources
+                    )
+                ):
+                    valid_citations.append(cite)
+
+            # Answers without citations cannot be verified as grounded.
+            if not valid_citations:
+                return {
+                    "answer": self.fallback_message,
+                    "sources": [],
+                    "fallback_used": True,
+                    "confidence": 0.0
+                }
+
+            sources = [
+                source for source in sources
+                if any(
+                    citation.get("document_name") == source.get("document_name")
+                    and (
+                        citation.get("page_number") is None
+                        or citation.get("page_number") == source.get("page_number")
+                    )
+                    for citation in valid_citations
+                )
+            ]
+
+            return {
+                "answer": answer_text,
+                "sources": sources,
+                "fallback_used": False,
+                "confidence": confidence
+            }
+
+        # Fallback synthesis if raw text returned without JSON
         return {
-            "answer": answer,
-            "sources": sources if not fallback_used else [],
-            "fallback_used": fallback_used
+            "answer": context_parts[0].split("\nContent: ")[-1][:300] if context_parts else self.fallback_message,
+            "sources": sources,
+            "fallback_used": False,
+            "confidence": 0.8
         }
-
-    def _extrapolate_from_context(self, question: str, context_parts: List[str]) -> str:
-        """
-        Extrapolates a clean, grounded answer directly from context when LLM API is unavailable.
-        """
-        if not context_parts:
-            return self.fallback_message
-            
-        combined_info = "\n".join(context_parts)
-        return (
-            f"Based on the official K.K. Wagh Polytechnic documents:\n\n"
-            f"{context_parts[0]}\n\n"
-            f"For further official assistance, please refer to the administration office or official notices."
-        )
 
 rag_service = RAGService()

@@ -4,11 +4,13 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Documents from './pages/Documents';
 import FAQs from './pages/FAQs';
 import Notices from './pages/Notices';
 import Logs from './pages/Logs';
+import AuditLogs from './pages/AuditLogs';
 
 const ProtectedLayout = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
@@ -40,6 +42,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route
             path="/"
             element={
@@ -77,6 +80,14 @@ function App() {
             element={
               <ProtectedLayout>
                 <Logs />
+              </ProtectedLayout>
+            }
+          />
+          <Route
+            path="/audit-logs"
+            element={
+              <ProtectedLayout>
+                <AuditLogs />
               </ProtectedLayout>
             }
           />

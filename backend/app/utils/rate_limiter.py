@@ -1,27 +1,60 @@
 import time
+import logging
 from collections import defaultdict
 from fastapi import HTTPException, Request, status
+from app.config import settings
 
-class SimpleRateLimiter:
-    def __init__(self, requests_per_minute: int = 30):
+logger = logging.getLogger(__name__)
+
+class RateLimiter:
+    def __init__(self, requests_per_minute: int = 40):
         self.requests_per_minute = requests_per_minute
         self.client_requests = defaultdict(list)
+        self.redis_client = None
 
-    def check_rate_limit(self, request: Request):
-        client_ip = request.client.host if request.client else "unknown"
+        if settings.REDIS_URL:
+            try:
+                import redis
+                self.redis_client = redis.from_url(settings.REDIS_URL, decode_responses=True)
+                logger.info(f"Connected to Redis for rate limiting at {settings.REDIS_URL}")
+            except Exception as e:
+                logger.warning(f"Could not connect to Redis ({str(e)}), falling back to in-memory rate limiter.")
+
+    def check_rate_limit(self, request: Request, identifier: str = None):
+        client_ip = identifier or (request.client.host if request.client else "unknown")
         now = time.time()
-        
-        # Clean timestamps older than 60 seconds
+
+        if self.redis_client:
+            try:
+                key = f"rate_limit:{client_ip}"
+                current_count = self.redis_client.get(key)
+                if current_count and int(current_count) >= self.requests_per_minute:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Rate limit exceeded. Please wait before asking more questions."
+                    )
+                pipe = self.redis_client.pipeline()
+                pipe.incr(key)
+                pipe.expire(key, 60)
+                pipe.execute()
+                return
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.warning(f"Redis rate limit check failed: {str(e)}. Falling back to in-memory.")
+
+        # In-memory sliding window
         self.client_requests[client_ip] = [
             ts for ts in self.client_requests[client_ip] if now - ts < 60
         ]
-        
+
         if len(self.client_requests[client_ip]) >= self.requests_per_minute:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="Rate limit exceeded. Please wait a minute before asking more questions."
+                detail="Rate limit exceeded. Please wait a minute before sending more requests."
             )
-            
+
         self.client_requests[client_ip].append(now)
 
-chat_rate_limiter = SimpleRateLimiter(requests_per_minute=40)
+chat_rate_limiter = RateLimiter(requests_per_minute=40)
+auth_rate_limiter = RateLimiter(requests_per_minute=10)

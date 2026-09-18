@@ -1,6 +1,5 @@
 import os
 import chromadb
-from chromadb.config import Settings as ChromaSettings
 from typing import List, Dict, Any, Optional
 from app.config import settings
 from app.services.embedding import embedding_service
@@ -39,7 +38,6 @@ class ChromaService:
             ids.append(chunk_id)
             documents.append(chunk["text"])
             
-            # ChromaDB metadata must have string, int, float or bool values
             meta = chunk["metadata"].copy()
             meta["document_id"] = int(doc_id)
             meta["page_number"] = int(meta.get("page_number", 1))
@@ -53,7 +51,7 @@ class ChromaService:
         )
         logger.info(f"Added {len(chunks)} chunks for doc_id {doc_id} to ChromaDB")
 
-    def search_similar(self, query: str, top_k: int = 4) -> List[Dict[str, Any]]:
+    def search_similar(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """
         Queries ChromaDB for top_k relevant text chunks.
         """
@@ -75,8 +73,7 @@ class ChromaService:
             distances = results["distances"][0]
 
             for doc, meta, dist in zip(docs, metas, distances):
-                # distance to similarity score conversion (for L2 or cosine distance)
-                # Lower distance means higher similarity
+                # distance to similarity conversion
                 similarity_score = max(0.0, 1.0 - (dist / 2.0)) if dist is not None else 0.5
                 formatted_results.append({
                     "text": doc,

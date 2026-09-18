@@ -1,8 +1,10 @@
+import uuid
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from app.config import settings
-from app.database import engine, Base, SessionLocal
+from app.database import engine, Base, SessionLocal, migrate_sqlite_schema
 from app.models import User, FAQ, Notice
 from app.utils.security import get_password_hash
 from app.routes import (
@@ -11,26 +13,45 @@ from app.routes import (
     documents_router,
     faqs_router,
     notices_router,
-    logs_router
+    logs_router,
+    audit_router
 )
 
 # Configure Logging
 logging.basicConfig(
     level=logging.INFO if settings.DEBUG else logging.WARNING,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - [%(levelname)s] - %(name)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+migrate_sqlite_schema()
 
 app = FastAPI(
     title=settings.APP_NAME,
     description="Production-ready Institutional AI Chatbot API for K.K. Wagh Polytechnic, Nashik.",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    version="2.0.0",
+    docs_url="/docs" if not settings.is_production else None,
+    redoc_url="/redoc" if not settings.is_production else None
 )
+
+# Security Headers & Request Tracing Middleware
+@app.middleware("http")
+async def security_and_tracing_middleware(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+    
+    response = await call_next(request)
+    
+    # Inject Security Headers
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    if settings.is_production:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # Setup CORS Middleware
 origins = settings.cors_origins_list
@@ -49,10 +70,11 @@ app.include_router(documents_router)
 app.include_router(faqs_router)
 app.include_router(notices_router)
 app.include_router(logs_router)
+app.include_router(audit_router)
 
 @app.on_event("startup")
 def startup_event():
-    logger.info("Initializing K.K. Wagh Polytechnic Chatbot Backend...")
+    logger.info("Initializing K.K. Wagh Polytechnic Chatbot Backend v2.0...")
     db = SessionLocal()
     try:
         # Seed or sync Default Admin User
@@ -69,7 +91,7 @@ def startup_event():
             db.add(new_admin)
             db.commit()
         else:
-            logger.info(f"Updating password hash for existing admin user: {settings.DEFAULT_ADMIN_USERNAME}")
+            logger.info(f"Syncing password hash for admin user: {settings.DEFAULT_ADMIN_USERNAME}")
             admin.hashed_password = get_password_hash(settings.DEFAULT_ADMIN_PASSWORD)
             admin.is_active = True
             db.commit()
@@ -107,12 +129,33 @@ def root():
         "status": "online",
         "service": settings.APP_NAME,
         "institute": "K.K. Wagh Polytechnic, Nashik",
-        "docs": "/docs"
+        "version": "2.0.0"
     }
 
 @app.get("/api/health")
 def health_check():
+    """
+    Comprehensive health check for SQL Database, Vector DB, and Embedding Service.
+    """
+    db_status = "healthy"
+    chroma_status = "healthy"
+
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+    except Exception as e:
+        db_status = f"unhealthy: {str(e)}"
+
+    try:
+        from app.services.chroma_service import chroma_service
+        chroma_service.collection.count()
+    except Exception as e:
+        chroma_status = f"unhealthy: {str(e)}"
+
     return {
-        "status": "healthy",
-        "database": "connected"
+        "status": "healthy" if db_status == "healthy" and chroma_status == "healthy" else "degraded",
+        "database": db_status,
+        "vector_store": chroma_status,
+        "environment": settings.ENVIRONMENT
     }

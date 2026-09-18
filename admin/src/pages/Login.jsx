@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Lock, User, AlertCircle, ShieldAlert } from 'lucide-react';
 
@@ -89,8 +89,11 @@ const Login = () => {
             {loading ? 'Authenticating...' : 'Sign In to Dashboard'}
           </button>
 
-          <div className="text-center text-xs text-slate-400 mt-4">
-            Default Credentials: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">admin</code> / <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600 font-mono">Admin@KKWagh2026</code>
+          <div className="flex justify-between items-center text-xs text-slate-500 mt-4 pt-2 border-t border-slate-100">
+            <span>Don't have an account?</span>
+            <Link to="/register" className="text-sky-600 font-semibold hover:underline">
+              Create Account
+            </Link>
           </div>
         </form>
       </div>

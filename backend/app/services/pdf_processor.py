@@ -1,23 +1,48 @@
 import fitz  # PyMuPDF
 import re
-from typing import List, Dict, Any
+import hashlib
+from typing import List, Dict, Any, Tuple
+from app.config import settings
 
 class PDFProcessor:
     def __init__(self, chunk_size: int = 600, chunk_overlap: int = 100):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
+    def compute_file_hash(self, file_bytes: bytes) -> str:
+        """
+        Calculates SHA-256 hash of raw file content.
+        """
+        return hashlib.sha256(file_bytes).hexdigest()
+
+    def validate_pdf_content(self, file_bytes: bytes) -> Tuple[bool, str]:
+        """
+        Validates PDF content by checking magic header bytes and size limits.
+        """
+        if not file_bytes:
+            return False, "Uploaded file is empty."
+
+        if len(file_bytes) > settings.MAX_UPLOAD_SIZE_BYTES:
+            max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+            return False, f"File size exceeds maximum limit of {max_mb} MB."
+
+        # Check PDF Magic Bytes (%PDF-)
+        if not file_bytes.startswith(b'%PDF-'):
+            return False, "Invalid PDF content. File header does not match standard PDF format."
+
+        return True, "Valid"
+
     def clean_text(self, text: str) -> str:
         if not text:
             return ""
-        # Remove extra whitespace and linebreaks
+        # Remove extra whitespace and non-printable control characters
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
         text = re.sub(r'\s+', ' ', text)
         return text.strip()
 
     def extract_text_from_pdf(self, pdf_path: str) -> List[Dict[str, Any]]:
         """
         Extracts text page by page from a PDF file.
-        Returns a list of dicts containing page number and extracted raw text.
         """
         doc = fitz.open(pdf_path)
         pages_content = []
