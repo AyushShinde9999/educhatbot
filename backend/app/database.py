@@ -1,9 +1,22 @@
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
 
-db_url = settings.DATABASE_URL
+db_url = settings.DATABASE_URL.strip().strip('"').strip("'")
+if db_url.startswith("postgres://"):
+    db_url = "postgresql://" + db_url.removeprefix("postgres://")
+
+try:
+    make_url(db_url)
+except ArgumentError as exc:
+    raise ValueError(
+        "DATABASE_URL is invalid. Use a PostgreSQL URI such as "
+        "postgresql://user:password@host:5432/database?sslmode=require."
+    ) from exc
+
 connect_args = {}
 
 if db_url.startswith("sqlite"):
